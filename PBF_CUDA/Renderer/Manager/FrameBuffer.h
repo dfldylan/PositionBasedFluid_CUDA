@@ -1,8 +1,10 @@
 #pragma once
 
+#include <memory>  // 新增
+#include <glm/glm.hpp>
+#include <string>  // 新增
 #include <vector>
 #include <GL/glew.h>
-#include <memory>
 
 namespace Renderer
 {

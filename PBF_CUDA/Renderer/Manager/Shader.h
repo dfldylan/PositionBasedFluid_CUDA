@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>   // 新增
 #include <string>
 #include <glm/glm.hpp>
 #include <GL/glew.h>

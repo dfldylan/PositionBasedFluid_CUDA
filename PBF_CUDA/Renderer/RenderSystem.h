@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>  // 新增
 #include "Light.h"
 #include "Manager/MeshMgr.h"
 #include "Manager/ShaderMgr.h"

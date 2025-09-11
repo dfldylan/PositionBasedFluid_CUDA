@@ -2,6 +2,7 @@
 
 #include <map>
 #include <vector>
+#include <string>   // 新增
 
 #include "Shader.h"
 #include "Singleton.h"

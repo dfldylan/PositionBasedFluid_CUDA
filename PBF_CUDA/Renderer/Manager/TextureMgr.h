@@ -3,6 +3,7 @@
 #include <map>
 #include <vector>
 #include <iostream>
+#include <string>   // 新增
 
 #include "Texture.h"
 #include "Singleton.h"

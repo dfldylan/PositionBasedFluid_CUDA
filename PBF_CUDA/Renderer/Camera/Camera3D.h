@@ -2,6 +2,7 @@
 
 #include <string>
 #include <glm/glm.hpp>
+#include <memory>  // 新增
 
 namespace Renderer
 {

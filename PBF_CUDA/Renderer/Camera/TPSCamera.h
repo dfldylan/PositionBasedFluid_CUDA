@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>  // 新增
 #include "Camera3D.h"
 #include "Transform3D.h"
 
