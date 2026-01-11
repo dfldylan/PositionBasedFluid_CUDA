@@ -69,8 +69,10 @@ extern void applyVorticityConfinment(
 namespace Simulator
 {
 #define M_PI 3.1415926535
-	FluidSystem::FluidSystem(unsigned int numParticles, uint3 gridSize, float radius) :
+	FluidSystem::FluidSystem(unsigned int numParticles, uint3 gridSize, float radius, bool useGLInterop) :
 		m_initialized(false),
+		m_useGLInterop(useGLInterop),
+		m_capacity(numParticles),
 		m_devicePos(nullptr),
 		m_deviceVel(nullptr),
 		m_deviceDeltaPos(nullptr),
@@ -79,7 +81,7 @@ namespace Simulator
 		// particles and grid.
 		m_params.m_gridSize = gridSize;
 		m_params.m_particleRadius = radius;
-		m_params.m_numParticles = numParticles;
+		m_params.m_numParticles = 0; // 初始活动粒子为 0
 		m_params.m_numGridCells = gridSize.x * gridSize.y * gridSize.z;
 
 		// iteration number.
@@ -116,7 +118,7 @@ namespace Simulator
 		m_params.m_oneDivWPoly6 = 1.0f / (m_params.m_poly6Coff *
 			pow(m_params.m_sphRadiusSquared - pow(0.1 * m_params.m_sphRadius, 2.0), 3.0));
 
-		initialize(numParticles);
+		initialize(m_capacity);
 	}
 
 	FluidSystem::~FluidSystem()
@@ -131,10 +133,15 @@ namespace Simulator
 			std::cout << "Must initialized first.\n";
 			return;
 		}
+		if (m_params.m_numParticles==0) return;
 
-		size_t numBytes = 0;
-		cudaGraphicsMapResources(1, &m_cudaPosVBORes, 0);
-		cudaGraphicsResourceGetMappedPointer((void**)&m_devicePos, &numBytes, m_cudaPosVBORes);
+		// 在 GL 互操作模式下，位置缓冲来自 VBO；否则，位置缓冲是 device 内存
+		if (m_useGLInterop)
+		{
+			size_t numBytes = 0;
+			cudaGraphicsMapResources(1, &m_cudaPosVBORes, 0);
+			cudaGraphicsResourceGetMappedPointer((void**)&m_devicePos, &numBytes, m_cudaPosVBORes);
+		}
 
 		// update constants
 		setParameters(&m_params);
@@ -206,33 +213,10 @@ namespace Simulator
 				m_params.m_numParticles);
 		}
 
-		// apply vorticity confinment.
-		//{
-		//	applyVorticityConfinment(
-		//		(float4*)m_deviceVel,
-		//		(float3*)m_deviceDeltaPos,
-		//		(float4*)m_devicePredictedPos,
-		//		deltaTime,
-		//		m_deviceCellStart,
-		//		m_deviceCellEnd,
-		//		m_deviceGridParticleHash,
-		//		m_params.m_numParticles);
-		//}
-
-		//// apply XSPH viscosity.
-		//{
-		//	applyXSPHViscosity(
-		//		(float4*)m_deviceVel,
-		//		(float3*)m_deviceDeltaPos,
-		//		(float4*)m_devicePredictedPos,
-		//		deltaTime,
-		//		m_deviceCellStart,
-		//		m_deviceCellEnd,
-		//		m_deviceGridParticleHash,
-		//		m_params.m_numParticles);
-		//}
-
-		cudaGraphicsUnmapResources(1, &m_cudaPosVBORes, 0);
+		if (m_useGLInterop)
+		{
+			cudaGraphicsUnmapResources(1, &m_cudaPosVBORes, 0);
+		}
 	}
 
 	void FluidSystem::setResetDensity(const float & value)
@@ -243,13 +227,22 @@ namespace Simulator
 
 	void FluidSystem::setParticlePositions(const float * data, int start, int nums)
 	{
-		cudaGraphicsUnregisterResource(m_cudaPosVBORes);
-		getLastCudaError("setParticlePositions.cudaGraphicsUnregisterResource");
-		glBindBuffer(GL_ARRAY_BUFFER, m_posVBO);
-		glBufferSubData(GL_ARRAY_BUFFER, start * 4 * sizeof(float), nums * 4 * sizeof(float), data);
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
-		cudaGraphicsGLRegisterBuffer(&m_cudaPosVBORes, m_posVBO, cudaGraphicsMapFlagsNone);
-		getLastCudaError("setParticlePositions.cudaGraphicsGLRegisterBuffer");
+		if (m_useGLInterop)
+		{
+			cudaGraphicsUnregisterResource(m_cudaPosVBORes);
+			getLastCudaError("setParticlePositions.cudaGraphicsUnregisterResource");
+			glBindBuffer(GL_ARRAY_BUFFER, m_posVBO);
+			glBufferSubData(GL_ARRAY_BUFFER, start * 4 * sizeof(float), nums * 4 * sizeof(float), data);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+			cudaGraphicsGLRegisterBuffer(&m_cudaPosVBORes, m_posVBO, cudaGraphicsMapFlagsNone);
+			getLastCudaError("setParticlePositions.cudaGraphicsGLRegisterBuffer");
+		}
+		else
+		{
+			// 直接拷贝到 devicePos（float4 排列）
+			cudaMemcpy((char*)m_devicePos + start * 4 * sizeof(float), data, nums * 4 * sizeof(float), cudaMemcpyHostToDevice);
+			getLastCudaError("setParticlePositions.cudaMemcpy");
+		}
 	}
 
 	void FluidSystem::setParticleVelocities(const float * data, int start, int nums)
@@ -261,9 +254,43 @@ namespace Simulator
 
 	void FluidSystem::addParticles(const std::vector<float>& pos, const std::vector<float>& vel, unsigned int num)
 	{
-		setParticlePositions(&pos[0], m_params.m_numParticles, num);
-		setParticleVelocities(&vel[0], m_params.m_numParticles, num);
-		m_params.m_numParticles += num;
+		unsigned int remain = (m_capacity>m_params.m_numParticles)? (m_capacity - m_params.m_numParticles) : 0;
+		unsigned int toAdd = std::min(remain, num);
+		if (toAdd==0) return;
+		setParticlePositions(&pos[0], m_params.m_numParticles, toAdd);
+		setParticleVelocities(&vel[0], m_params.m_numParticles, toAdd);
+		m_params.m_numParticles += toAdd;
+	}
+
+	bool FluidSystem::downloadPositionsXYZ(std::vector<float> &outXYZ) const
+	{
+		if (!m_initialized) return false;
+		std::vector<float> tmp(4 * m_params.m_numParticles);
+		cudaMemcpy(tmp.data(), m_devicePos, sizeof(float) * 4 * m_params.m_numParticles, cudaMemcpyDeviceToHost);
+		// 拷贝 XYZ
+		outXYZ.resize(3 * m_params.m_numParticles);
+		for (unsigned int i = 0; i < m_params.m_numParticles; ++i)
+		{
+			outXYZ[3 * i + 0] = tmp[4 * i + 0];
+			outXYZ[3 * i + 1] = tmp[4 * i + 1];
+			outXYZ[3 * i + 2] = tmp[4 * i + 2];
+		}
+		return true;
+	}
+
+	bool FluidSystem::downloadVelocitiesXYZ(std::vector<float> &outXYZ) const
+	{
+		if (!m_initialized) return false;
+		std::vector<float> tmp(4 * m_params.m_numParticles);
+		cudaMemcpy(tmp.data(), m_deviceVel, sizeof(float) * 4 * m_params.m_numParticles, cudaMemcpyDeviceToHost);
+		outXYZ.resize(3 * m_params.m_numParticles);
+		for (unsigned int i = 0; i < m_params.m_numParticles; ++i)
+		{
+			outXYZ[3 * i + 0] = tmp[4 * i + 0];
+			outXYZ[3 * i + 1] = tmp[4 * i + 1];
+			outXYZ[3 * i + 2] = tmp[4 * i + 2];
+		}
+		return true;
 	}
 
 	void FluidSystem::initialize(int numParticles)
@@ -274,27 +301,35 @@ namespace Simulator
 			return;
 		}
 
-		m_params.m_numParticles = numParticles;
-		unsigned int memSize = sizeof(float) * 4 * m_params.m_numParticles;
+		m_capacity = numParticles;
+		unsigned int memSize = sizeof(float) * 4 * m_capacity;
 
-		// vbo.
-		glGenBuffers(1, &m_posVBO);
-		glBindBuffer(GL_ARRAY_BUFFER, m_posVBO);
-		glBufferData(GL_ARRAY_BUFFER, memSize, 0, GL_DYNAMIC_DRAW);
-		int size = 0;
-		glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, (GLint *)&size);
-		if ((unsigned)size != memSize)
-			fprintf(stderr, "WARNING: Pixel Buffer Object allocation failed!\n");
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
-		cudaGraphicsGLRegisterBuffer(&m_cudaPosVBORes, m_posVBO, cudaGraphicsMapFlagsNone);
-		getLastCudaError("cudaGraphicsGLRegisterBuffer");
+		if (m_useGLInterop)
+		{
+			// vbo.
+			glGenBuffers(1, &m_posVBO);
+			glBindBuffer(GL_ARRAY_BUFFER, m_posVBO);
+			glBufferData(GL_ARRAY_BUFFER, memSize, 0, GL_DYNAMIC_DRAW);
+			int size = 0;
+			glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, (GLint *)&size);
+			if ((unsigned)size != memSize)
+				fprintf(stderr, "WARNING: Pixel Buffer Object allocation failed!\n");
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+			cudaGraphicsGLRegisterBuffer(&m_cudaPosVBORes, m_posVBO, cudaGraphicsMapFlagsNone);
+			getLastCudaError("cudaGraphicsGLRegisterBuffer");
+		}
+		else
+		{
+			cudaMalloc((void**)&m_devicePos, memSize);
+			getLastCudaError("allocation.m_devicePos");
+		}
 
 		// allocation.
 		cudaMalloc((void**)&m_deviceVel, memSize);
 		getLastCudaError("allocation1");
 		cudaMalloc((void**)&m_devicePredictedPos, memSize);
-		cudaMalloc((void**)&m_deviceDeltaPos, sizeof(float) * 3 * m_params.m_numParticles);
-		cudaMalloc((void**)&m_deviceGridParticleHash, m_params.m_numParticles * sizeof(unsigned int));
+		cudaMalloc((void**)&m_deviceDeltaPos, sizeof(float) * 3 * m_capacity);
+		cudaMalloc((void**)&m_deviceGridParticleHash, m_capacity * sizeof(unsigned int));
 		cudaMalloc((void**)&m_deviceCellStart, m_params.m_numGridCells * sizeof(unsigned int));
 		cudaMalloc((void**)&m_deviceCellEnd, m_params.m_numGridCells * sizeof(unsigned int));
 		getLastCudaError("allocation");
@@ -326,10 +361,18 @@ namespace Simulator
 		cudaFree(m_deviceCellEnd);
 		getLastCudaError("free allocation.m_deviceCellEnd");
 
-		// unregister.
-		cudaGraphicsUnregisterResource(m_cudaPosVBORes);
-		getLastCudaError("cudaGraphicsUnregisterResource.");
-		glDeleteBuffers(1, &m_posVBO);
+		if (m_useGLInterop)
+		{
+			// unregister.
+			cudaGraphicsUnregisterResource(m_cudaPosVBORes);
+			getLastCudaError("cudaGraphicsUnregisterResource.");
+			glDeleteBuffers(1, &m_posVBO);
+		}
+		else
+		{
+			cudaFree(m_devicePos);
+			getLastCudaError("free allocation.m_devicePos");
+		}
 		m_initialized = false;
 	}
 }

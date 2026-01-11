@@ -42,6 +42,7 @@
     <ClCompile Include="Renderer\RenderDevice.cpp" />
     <ClCompile Include="Renderer\RenderSystem.cpp" />
     <ClCompile Include="Renderer\Voxelization.cpp" />
+    <ClCompile Include="Service\FluidService.cpp" />
     <ClCompile Include="Simulator\FluidDemo.cpp" />
     <ClCompile Include="Simulator\FluidSystem.cpp" />
   </ItemGroup>
@@ -68,7 +69,6 @@
     <ClInclude Include="Renderer\Drawable\StaticModelDrawable.h" />
     <ClInclude Include="Renderer\Light.h" />
     <ClInclude Include="Renderer\Manager\FrameBuffer.h" />
-    <ClInclude Include="Renderer\Manager\Geometry.h" />
     <ClInclude Include="Renderer\Manager\Mesh.h" />
     <ClInclude Include="Renderer\Manager\MeshMgr.h" />
     <ClInclude Include="Renderer\Manager\Shader.h" />
@@ -81,6 +81,9 @@
     <ClInclude Include="Renderer\RenderDevice.h" />
     <ClInclude Include="Renderer\RenderSystem.h" />
     <ClInclude Include="Renderer\Voxelization.h" />
+    <ClInclude Include="Service\FluidService.h" />
+    <ClInclude Include="Service\Json.h" />
+    <ClInclude Include="Service\SocketServer.h" />
     <ClInclude Include="Simulator\FluidDemo.h" />
     <ClInclude Include="Simulator\FluidKernel.cuh" />
     <ClInclude Include="Simulator\FluidSystem.h" />
@@ -134,7 +137,7 @@
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Console</SubSystem>
-      <AdditionalDependencies>cudart_static.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;opengl32.lib;glew32.lib;glfw3.lib;assimp-vc140-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>cudart_static.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;opengl32.lib;glew32.lib;glfw3.lib;assimp-vc140-mt.lib;Ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>../lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <CudaCompile>
@@ -156,7 +159,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <SubSystem>Console</SubSystem>
-      <AdditionalDependencies>cudart_static.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;opengl32.lib;glew32.lib;glfw3.lib;assimp-vc140-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>cudart_static.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;opengl32.lib;glew32.lib;glfw3.lib;assimp-vc140-mt.lib;Ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>../lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <CudaCompile>
